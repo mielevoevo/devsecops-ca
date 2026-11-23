@@ -1,0 +1,109 @@
+- name: Install role from Galaxy (should not fail with AttributeError)
+  command: ansible-galaxy role install ansible.nope -vvvv --ignore-errors
+
+- name: Archive directories
+  file:
+    state: directory
+    path: "{{ remote_tmp_dir }}/role.d/{{item}}"
+  loop:
+  - meta
+  - tasks
+
+- name: Metadata file
+  copy:
+    content: "'galaxy_info': {}"
+    dest: "{{ remote_tmp_dir }}/role.d/meta/main.yml"
+
+- name: Valid files
+  copy:
+    content: ""
+    dest: "{{ remote_tmp_dir }}/role.d/tasks/{{item}}"
+  loop:
+  - "main.yml"
+  - "valid~file.yml"
+
+- name: Valid role archive
+  command: "tar cf {{ remote_tmp_dir }}/valid-role.tar {{ remote_tmp_dir }}/role.d"
+
+- name: Add invalid symlink
+  file:
+    state: link
+    src: "~/invalid"
+    dest: "{{ remote_tmp_dir }}/role.d/tasks/~invalid.yml"
+    force: yes
+
+- name: Add another invalid symlink
+  file:
+    state: link
+    src: "/"
+    dest: "{{ remote_tmp_dir }}/role.d/tasks/invalid$name.yml"
+
+- name: Valid requirements file
+  copy:
+    dest: valid-requirements.yml
+    content: "[{'src': '{{ remote_tmp_dir }}/valid-role.tar', 'name': 'valid-testrole'}]"
+
+- name: Invalid role archive
+  command: "tar cf {{ remote_tmp_dir }}/invalid-role.tar {{ remote_tmp_dir }}/role.d"
+
+- name: Invalid requirements file
+  copy:
+    dest: invalid-requirements.yml
+    content: "[{'src': '{{ remote_tmp_dir }}/invalid-role.tar', 'name': 'invalid-testrole'}]"
+
+- name: Install valid role
+  command: ansible-galaxy install -r valid-requirements.yml
+
+- name: Uninstall valid role
+  command: ansible-galaxy role remove valid-testrole
+
+- name: Install invalid role
+  command: ansible-galaxy install -r invalid-requirements.yml
+  ignore_errors: yes
+  register: invalid
+
+- assert:
+    that:
+      - invalid.rc != 0
+      - 'invalid.stderr is search("Invalid linkname for tarfile member: path (:?/|/root/invalid) is not a subpath of the role")'
+
+- name: Uninstall invalid role
+  command: ansible-galaxy role remove invalid-testrole
+
+- name: Test invalid role requirement name
+  vars:
+    abs_name: "{{ remote_tmp_dir }}/unsafe"
+    install_msg: "{{ abs_name }} was installed successfully"
+    external_msg: "The role name '{{ abs_name }}' resolves to a path outside of the configured role directory"
+  block:
+    - name: Create invalid requirements file
+      copy:
+        dest: invalid-requirements.yml
+        content: |-
+          - src: "{{ remote_tmp_dir }}/valid-role.tar"
+            name: "{{ abs_name }}"
+
+    - name: Test installing the role
+      command: ansible-galaxy install -r invalid-requirements.yml
+      register: fail_external
+      ignore_errors: True
+
+    - assert:
+        that:
+          - fail_external is failed
+          - fail_external.stderr is search(external_msg)
+          - fail_external.stdout is not search(install_msg)
+
+- name: Test --ignore-errors skips unsatisfiable invalid requirement name
+  command: ansible-galaxy install {{ remote_tmp_dir }}/roles/../valid-role.tar --roles-path {{ remote_tmp_dir }}/roles --ignore-errors
+  register: warn_external
+
+- assert:
+    that:
+      - warn_external is success
+      - warn_external.stderr is search("The role name '.*' resolves to a path outside of the configured role directory")
+      - warn_external.stdout is not search(".* was installed successfully")
+
+- import_tasks: dir-traversal.yml
+- import_tasks: valid-role-symlinks.yml
+- import_tasks: git-config-injection.yml
