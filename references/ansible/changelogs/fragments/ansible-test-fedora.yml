@@ -1,2 +1,0 @@
-minor_changes:
-  - ansible-test - Replace Fedora 44 remote and container with Fedora 45.

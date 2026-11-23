@@ -1,3 +1,0 @@
-bugfixes:
-  - ansible-test - A stub for the ``ansible`` module is now generated for non-controller code before it is imported.
-                   Previously it was replaced with a stub after initially being imported.

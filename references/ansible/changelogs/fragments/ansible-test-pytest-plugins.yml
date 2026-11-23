@@ -1,2 +1,0 @@
-bugfixes:
-  - ansible-test - Load pytest plugins using full package names to avoid naming conflicts.
